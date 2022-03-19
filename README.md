@@ -12,5 +12,5 @@ conda deactivate
 # Running a Pretrained DPR Retriever
 
 ```
-torchrun --standalone --nnodes=1 --nproc_per_node=8 encode_passages.py ../DPR/downloads/checkpoint/retriever/single/nq/bert-base-encoder.cp 'data/psgs_w100_shard*.tsv' /data/local/minDPR_runs/DPR_pretrained/ --batch_size 2048 --num_workers 2 --gpus 0,1,2,3,4,5,6,7
+torchrun --standalone --nnodes=1 --nproc_per_node=8 encode_passages.py [DPR checkpoint] 'data/psgs_w100_shard*.tsv' [emb outdir] --batch_size 2048 --num_workers 2 --gpus 0,1,2,3,4,5,6,7  # ~30G memory
 ```
