@@ -1,4 +1,4 @@
-# python data/make_toy_data.py data/nq-train.json --N 11
+# python make_toy_data.py data/nq-train.json --N 11
 import argparse
 import json
 import os

@@ -1,5 +1,5 @@
-# python data/shard_wiki.py data/psgs_w100_first11.tsv --num_shards 2
-# python data/shard_wiki.py data/psgs_w100.tsv --num_shards 10
+# python shard_wiki.py data/psgs_w100_first11.tsv --num_shards 2
+# python shard_wiki.py data/psgs_w100.tsv --num_shards 10
 import argparse
 import os
 
