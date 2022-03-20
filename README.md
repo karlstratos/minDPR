@@ -9,27 +9,27 @@ conda install -c pytorch faiss-gpu
 conda deactivate
 ```
 
-# DPR Baseline
+# DPR (Single NQ) Baseline
 
-## Summary
+## Summary 
 
 |                                            | k=1             | k=5               | k=20            | k=100    |
 | :---:                                      | :---:           | :---:             | :---:           | :---:    |
 | Running DPR checkpoint using DPR code      | 46.4            | 68.6              | 80.1            | 86.1     |
 | Running DPR checkpoint using this scode    | ?               | ?                 | ?               | ?        |
-| Evaluating the released DPR result file    | 46.3            | 68.3              | 80.1            | 86.1     |
+| Evaluating released DPR result file        | 46.3            | 68.3              | 80.1            | 86.1     |
 | DPR GitHub numbers: without hard negatives | 45.9            | 68.1              | 80.0            | 85.9     |
 | DPR GitHub numbers: with hard negatives    | 52.5            | 72.2              | 81.3            | 87.3     |
 
-## Running a pretrained retriever
+## Commands 
 
+Running a DPR checkpoint 
 ```
 torchrun --standalone --nnodes=1 --nproc_per_node=8 encode_passages.py [DPR checkpoint] 'data/psgs_w100_shard*.tsv' [emb outdir] --batch_size 2048 --num_workers 2 --gpus 0,1,2,3,4,5,6,7  # ~30G, ~1h
 python search.py [DPR checkpoint] data/nq-test.csv '[emb outdir]/psgs_w100_shard*_encoded.pickle' [outfile] data/psgs_w100.tsv --gpu 0  # RAM usage: ~90G after indexing all passages
 ```
 
-## Evaluating the released result file
-
+Evaluating a released result file
 ```
-python evaluate.py [DPR (nq-single) test.json]
+python evaluate.py [DPR test.json]
 ```
