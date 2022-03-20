@@ -26,6 +26,13 @@ def uninorm(text): # https://en.wikipedia.org/wiki/Unicode_equivalence
     return unicodedata.normalize('NFD', text)
 
 
+def contains(lst, sublst):  # True iff lst contains sublst
+    for i in range(0, len(lst) - len(sublst) + 1):
+        if sublst == lst[i: i + len(sublst)]:
+            return True
+    return False
+
+
 class Logger(object):
 
     def __init__(self, log_path=None, on=True):

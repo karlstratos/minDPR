@@ -4,7 +4,7 @@ import os
 from collections import Counter
 from file_handling import read_json
 from simple_tokenizer import word_tokenize
-from util import uninorm
+from util import contains, uninorm
 
 
 def has_answer(candidate, answers, mode='string', lower=True):
