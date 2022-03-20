@@ -116,7 +116,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('model', type=str)
-    parser.add_argument('passages', type=str)
+    parser.add_argument('passages', type=str, help='regex for psg shards')
     parser.add_argument('outdir', type=str)
     parser.add_argument('--batch_size', type=int, default=3)
     parser.add_argument('--num_workers', type=int, default=0)

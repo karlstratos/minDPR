@@ -71,6 +71,7 @@ def load_model(model_path, tokenizer, device):
         model.load_state_dict(saved_pickle['sd'])
         args_saved = saved_pickle['args']
 
+    # TODO: Make 'pad_to_max' arg in my model too and set that instead.
     return model, args_saved, is_dpr
 
 

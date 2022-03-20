@@ -1,5 +1,6 @@
 import os
 import sys
+import unicodedata
 
 from datetime import datetime
 
@@ -19,6 +20,10 @@ def check_distributed():
 def strtime(datetime_checkpoint):
     diff = datetime.now() - datetime_checkpoint
     return str(diff).rsplit('.')[0]  # Ignore below seconds
+
+
+def uninorm(text): # https://en.wikipedia.org/wiki/Unicode_equivalence
+    return unicodedata.normalize('NFD', text)
 
 
 class Logger(object):
