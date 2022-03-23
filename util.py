@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import unicodedata
 
@@ -24,6 +25,14 @@ def strtime(datetime_checkpoint):
 
 def uninorm(text): # https://en.wikipedia.org/wiki/Unicode_equivalence
     return unicodedata.normalize('NFD', text)
+
+
+def shuffle_index(lst, shuffle=True):
+    lst_indexed = list(enumerate(lst))
+    if shuffle:
+        random.shuffle(lst_indexed)
+    shuffled_indices, shuffled_lst = zip(*lst_indexed)
+    return shuffled_lst, shuffled_indices
 
 
 def contains(lst, sublst):  # True iff lst contains sublst

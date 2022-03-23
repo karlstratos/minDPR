@@ -17,7 +17,7 @@ def main(args):
     from torch.distributed import init_process_group
     from torch.utils.data import DataLoader
     from torch.utils.data.distributed import DistributedSampler
-    from transformers import AutoTokenizer, set_seed
+    from transformers import AutoTokenizer
     from tqdm import tqdm
     from util import Logger, check_distributed, strtime
 
