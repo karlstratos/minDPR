@@ -31,13 +31,13 @@ def main(args):
     # Question embeddings
     print(f'Model {args.model}, batch size {args.batch_size}')
     tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-    model, args_saved, is_dpr = load_model(args.model, tokenizer, device)
+    model, args_saved = load_model(args.model, tokenizer, device)
 
     print(f'Computing question embeddings from: {args.queries}')
     dataset_queries = DPRDataset(args.queries)
     collate_fn = lambda samples: tensorize_questions(samples, tokenizer,
                                                      args_saved.max_length,
-                                                     pad_to_max=is_dpr)
+                                                     args_saved.pad_to_max)
     loader = DataLoader(dataset_queries, batch_size=args.batch_size,
                         shuffle=False, num_workers=args.num_workers,
                         collate_fn=collate_fn)

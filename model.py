@@ -154,9 +154,11 @@ def get_bert_optimizer(model, learning_rate=2e-5, adam_eps=1e-6):
 def load_model(model_path, tokenizer, device):
     saved_pickle = torch.load(model_path, map_location=device)
     model = make_bert_model(tokenizer).to(device)
-    is_dpr = not 'sd' in saved_pickle
 
-    if is_dpr:
+    if 'sd' in saved_pickle:  # minDPR model
+        model.load_state_dict(saved_pickle['sd'])
+        args_saved = saved_pickle['args']
+    else:  # DPR model
         saved_state = load_states_from_checkpoint(model_path)
         question_state = {
             key[len("question_model."):]: value for (key, value) in
@@ -170,14 +172,12 @@ def load_model(model_path, tokenizer, device):
                                                     strict=False)
         model.passage_encoder.encoder.load_state_dict(passage_state,
                                                       strict=False)
-        ArgsMock = collections.namedtuple('ArgsMock', ['max_length'])
-        args_saved = ArgsMock(saved_state.encoder_params['sequence_length'])
-    else:
-        model.load_state_dict(saved_pickle['sd'])
-        args_saved = saved_pickle['args']
+        ArgsMock = collections.namedtuple('ArgsMock', ['max_length',
+                                                       'pad_to_max'])
+        args_saved = ArgsMock(saved_state.encoder_params['sequence_length'],
+                              True)
 
-    # TODO: Make 'pad_to_max' arg in my model too and set that instead.
-    return model, args_saved, is_dpr
+    return model, args_saved
 
 
 CheckpointState = collections.namedtuple('CheckpointState',

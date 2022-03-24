@@ -9,6 +9,15 @@ conda install -c pytorch faiss-gpu
 conda deactivate
 ```
 
+# NQ
+```
+./mindpr/run.sh 0,1,2,3,4,5,6,7
+```
+or explicitly
+```
+torchrun --standalone --nnodes=1 --nproc_per_node=8 train.py /data/local/minDPR_runs/nq/model data/nq-train.json data/nq-dev.json --num_warmup_steps 1237 --num_workers 2 --gpus 0,1,2,3,4,5,6,7  # 20-37G
+```
+
 # DPR (Single NQ) Baseline
 
 ## Summary

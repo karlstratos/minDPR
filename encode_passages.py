@@ -42,7 +42,7 @@ def main(args):
     logger.log(f'Using device: {str(device)}', force=True)
 
     tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-    model, args_saved, is_dpr = load_model(args.model, tokenizer, device)
+    model, args_saved = load_model(args.model, tokenizer, device)
 
     if is_distributed:
         logger.log('DDP wrapping')
@@ -60,7 +60,7 @@ def main(args):
     mkdir_optional(args.outdir)
     collate_fn = lambda samples: tensorize_passages(samples, tokenizer,
                                                     args_saved.max_length,
-                                                    pad_to_max=is_dpr)
+                                                    args_saved.pad_to_max)
     for passage_file in passage_files:
         dataset = WikiPassageDataset(passage_file)
         logger.log(f'{passage_file} ({len(dataset)} passages)')
