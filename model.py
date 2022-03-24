@@ -4,7 +4,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 
 from torch.serialization import default_restore_location
-from transformers import AutoModel
+from transformers import AutoModel, AdamW
 
 
 class DualEncoder(torch.nn.Module):
@@ -39,11 +39,115 @@ class BertEncoder(torch.nn.Module):
         return embeddings
 
 
+def get_loss(model, batch, rank=-1, world_size=-1, device=None):
+    if device is None:
+        device = torch.device('cpu')
+
+    Q, Q_mask, Q_type, P, P_mask, P_type, labels  = [tensor.to(device)
+                                                     for tensor in batch[:-3]]
+    X, Y = model(Q, Q_mask, Q_type, P, P_mask, P_type)
+
+    if world_size != -1:
+        labels += rank * len(Y)
+        X_list = [torch.zeros_like(X) for _ in range(world_size)]
+        Y_list = [torch.zeros_like(Y) for _ in range(world_size)]
+        labels_list = [torch.zeros_like(labels) for _ in
+                       range(world_size)]
+        dist.all_gather(tensor_list=X_list, tensor=X.contiguous())
+        dist.all_gather(tensor_list=Y_list, tensor=Y.contiguous())
+        dist.all_gather(tensor_list=labels_list,
+                        tensor=labels.contiguous())
+
+        # Since all_gather results do not have gradients, we replace
+        # the current process's embeddings with originals.
+        X_list[rank] = X
+        Y_list[rank] = Y
+
+        X = torch.cat(X_list, 0)
+        Y = torch.cat(Y_list, 0)
+        labels = torch.cat(labels_list, 0)
+
+    scores = X @ Y.t()  # (B, (1 + num_negs)*B)
+
+    # No need to all reduce loss/num_correct: each process already
+    # has all examples across all processes.
+    loss = F.cross_entropy(scores, labels, reduction='mean')
+    num_correct = (torch.max(scores, 1)[1] == labels).sum()
+
+    return loss, num_correct
+
+
+def validate_by_rank(model, loader, rank=-1, world_size=-1,
+                     device=None, subbatch_size=128):
+    model.eval()
+    if device is None:
+        device = torch.device('cpu')
+
+    X_all = []
+    Y_all = []
+    labels_all = []
+    buffer_size = 0
+    with torch.no_grad():
+        for batch in loader:
+            Q, Q_mask, Q_type, P, P_mask, P_type, labels = batch[:-3]
+
+            X, _ = model(Q.to(device), Q_mask.to(device), Q_type.to(device))
+            X_all.append(X.cpu())
+
+            for i in range(0, P.size(0), subbatch_size):
+                subP = P[i: i + subbatch_size, :]
+                subP_mask = P_mask[i: i + subbatch_size, :]
+                subP_type = P_type[i: i + subbatch_size, :]
+                _, subY = model(P=subP.to(device),
+                                P_mask=subP_mask.to(device),
+                                P_type=subP_type.to(device))
+                Y_all.append(subY.cpu())
+
+            labels_all.append((labels + buffer_size).cpu())
+            buffer_size += P.size(0)
+
+    X_all = torch.cat(X_all, 0)  # (N/P, d)
+    Y_all = torch.cat(Y_all, 0)  # (MN/P, d)
+    labels_all = torch.cat(labels_all, 0)  # (N/P,): each element in [MN/P]
+    scores = X_all @ Y_all.t()  # (N/P, MN/P)
+    _, indices = torch.sort(scores, dim=1, descending=True)  # (N/P, MN/P)
+    ranks = (indices == labels_all.view(-1, 1)).nonzero()[:, 1]
+    sum_ranks = ranks.sum().to(device)
+    num_queries = torch.LongTensor([indices.size(0)]).to(device)
+    num_cands = torch.LongTensor([indices.size(1)]).to(device)
+    if world_size != -1:
+        dist.all_reduce(sum_ranks, op=dist.ReduceOp.SUM)
+        dist.all_reduce(num_queries, op=dist.ReduceOp.SUM)
+        dist.all_reduce(num_cands, op=dist.ReduceOp.SUM)
+
+    rank_average = (sum_ranks / num_queries).item()
+    num_cands_avg = num_cands.item() / world_size \
+                    if world_size != -1 else num_cands.item()
+
+    return rank_average, num_cands_avg
+
+
 def make_bert_model(tokenizer, dropout=0.1):
     query_encoder = BertEncoder(dropout)
     passage_encoder = BertEncoder(dropout)
     model = DualEncoder(tokenizer, query_encoder, passage_encoder)
     return model
+
+
+def get_bert_optimizer(model, learning_rate=2e-5, adam_eps=1e-6):
+    # https://github.com/google-research/bert/blob/master/optimization.py#L25
+    no_decay = ['bias', 'LayerNorm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters()
+                    if not any(nd in n for nd in no_decay)],
+         'weight_decay': 0.0},
+        {'params': [p for n, p in model.named_parameters()
+                    if any(nd in n for nd in no_decay)],
+         'weight_decay': 0.0}
+    ]
+    optimizer = AdamW(optimizer_grouped_parameters, lr=learning_rate,
+                      eps=adam_eps)
+    return optimizer
 
 
 def load_model(model_path, tokenizer, device):

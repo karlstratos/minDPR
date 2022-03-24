@@ -28,6 +28,8 @@ def uninorm(text): # https://en.wikipedia.org/wiki/Unicode_equivalence
 
 
 def shuffle_index(lst, shuffle=True):
+    if lst == []:
+        return [], []
     lst_indexed = list(enumerate(lst))
     if shuffle:
         random.shuffle(lst_indexed)
