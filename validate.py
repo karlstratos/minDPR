@@ -3,7 +3,6 @@
 # python validate.py --batch_size_val 11 --num_hard_negatives 3 --num_other_negatives 4 --subbatch_size 7 --gpus 0
 # torchrun --standalone --nnodes=1 --nproc_per_node=2 validate.py --batch_size_val 6 --num_hard_negatives 3 --num_other_negatives 4 --subbatch_size 7 --gpus 0,1
 # torchrun --standalone --nnodes=1 --nproc_per_node=8 validate.py --data_val data/nq-dev.json --batch_size_val 512 --num_hard_negatives 30 --num_other_negatives 30 --subbatch_size 1024 --gpus 0,1,2,3,4,5,6,7 --num_workers 2 --pad_to_max  # 15210/49584 per process, 1-2m
-
 import argparse
 import os
 

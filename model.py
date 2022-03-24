@@ -4,7 +4,8 @@ import torch.distributed as dist
 import torch.nn.functional as F
 
 from torch.serialization import default_restore_location
-from transformers import AutoModel, AdamW
+from torch.optim import AdamW
+from transformers import AutoModel
 
 
 class DualEncoder(torch.nn.Module):
