@@ -10,6 +10,13 @@ pip install torch==1.10.1+cu113 torchvision==0.11.2+cu113 torchaudio==0.10.1+cu1
 conda install -c pytorch faiss-gpu
 conda deactivate
 ```
+For simplicity, the code assumes that all input files are in `data/`, specifically `nq-train.json`, `nq-dev.json`, `nq-test.csv`, and `psgs_w100.tsv`.
+Shard the passage file by calling
+```
+python shard_wiki.py data/psgs_w100.tsv --num_shards 10
+```
+Modify the data directory and output directory paths in the `run.sh` script.
+
 
 # Training
 
