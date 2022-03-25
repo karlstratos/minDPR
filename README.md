@@ -23,7 +23,7 @@ Modify the data directory and output directory paths in the `run.sh` script.
 ## Results
 
 |                                                     | k=1             | k=5               | k=20            | k=100    |
-| :---:                                               | :---:           | :---:             | :---:           | :---:    |
+| :--                                                 | :---:           | :---:             | :---:           | :---:    |
 | minDPR (seed 42)                                    | 46.3            | 68.4              | 79.5            | 86.2     |
 | minDPR (seed 12345)                                 | 45.5            | 68.9              | 79.7            | 86.0     |
 | minDPR + DPR dataloader + pad_to_max (seed 42)      | 46.6            | 68.1              | 79.8            | 86.2     |
@@ -52,7 +52,7 @@ python search.py /data/local/minDPR_runs/nq/model data/nq-test.csv '/data/local/
 ## Results
 
 |                                            | k=1             | k=5               | k=20            | k=100    |
-| :---:                                      | :---:           | :---:             | :---:           | :---:    |
+| :--                                        | :---:           | :---:             | :---:           | :---:    |
 | Running DPR checkpoint using DPR code      | 46.4            | 68.6              | 80.1            | 86.1     |
 | Running DPR checkpoint using this scode    | 46.5            | 68.6              | 80.1            | 86.1     |
 | Evaluating released DPR result file        | 46.3            | 68.3              | 80.1            | 86.1     |
