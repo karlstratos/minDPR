@@ -1,10 +1,6 @@
 data/*
 
-!data/make_toy_data.py
-!data/shard_wiki.py
 !data/nq-train11.json
-!data/psgs_w100_first11*
-
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
