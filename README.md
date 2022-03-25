@@ -1,3 +1,5 @@
+This is minimal PyTorch code to replicate single NQ retrieval results.
+
 # Setup
 
 ```
@@ -9,18 +11,38 @@ conda install -c pytorch faiss-gpu
 conda deactivate
 ```
 
-# NQ
+# Training
+
+## Results
+
+|                                                     | k=1             | k=5               | k=20            | k=100    |
+| :---:                                               | :---:           | :---:             | :---:           | :---:    |
+| minDPR (seed 42)                                    | 46.3            | 68.4              | 79.5            | 86.2     |
+| minDPR (seed 12345)                                 | 45.5            | 68.9              | 79.7            | 86.0     |
+| minDPR + DPR dataloader + pad_to_max (seed 42)      | 46.6            | 68.1              | 79.8            | 86.2     |
+| minDPR + DPR dataloader + pad_to_max (seed 12345)   | 46.0            | 68.2              | 79.9            | 86.4     |
+| DPR GitHub code                                     | 46.0            | 68.2              | 79.1            | 86.3     |
+
+Observations
+ - Training using the official DPR GitHub code (i.e., last row) is the most fair baseline. minDPR matches it (e.g., first row).
+ - Some variance using different random seeds.
+
+
+## Commands
+
 ```
 ./mindpr/run.sh 0,1,2,3,4,5,6,7
 ```
 or explicitly
 ```
-torchrun --standalone --nnodes=1 --nproc_per_node=8 train.py /data/local/minDPR_runs/nq/model data/nq-train.json data/nq-dev.json --num_warmup_steps 1237 --num_workers 2 --gpus 0,1,2,3,4,5,6,7  # 20-37G
+torchrun --standalone --nnodes=1 --nproc_per_node=8 train.py /data/local/minDPR_runs/nq/model data/nq-train.json data/nq-dev.json --num_warmup_steps 1237 --num_workers 2 --gpus 0,1,2,3,4,5,6,7  # 20-37G, 1h 54m, best epoch 37
+torchrun --standalone --nnodes=1 --nproc_per_node=8 encode_passages.py /data/local/minDPR_runs/nq/model 'data/psgs_w100_shard*.tsv' /data/local/minDPR_runs/nq --batch_size 2048 --num_workers 2 --gpus 0,1,2,3,4,5,6,7  # 29-39G, 1h 4m
+python search.py /data/local/minDPR_runs/nq/model data/nq-test.csv '/data/local/minDPR_runs/nq/psgs_w100_shard*.pickle' /data/local/minDPR_runs/nq/out.json data/psgs_w100.tsv --gpu 0  # 11m
 ```
 
-# DPR (Single NQ) Baseline
+# Pretrained/Reported DPR Results
 
-## Summary
+## Results
 
 |                                            | k=1             | k=5               | k=20            | k=100    |
 | :---:                                      | :---:           | :---:             | :---:           | :---:    |
@@ -29,7 +51,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=8 train.py /data/local/minDPR_
 | Evaluating released DPR result file        | 46.3            | 68.3              | 80.1            | 86.1     |
 | DPR GitHub numbers: without hard negatives | 45.9            | 68.1              | 80.0            | 85.9     |
 | DPR GitHub numbers: with hard negatives    | 52.5            | 72.2              | 81.3            | 87.3     |
-
+| DPR paper (2020)                           | ---             | ---               | 78.4            | 85.4     |
 
 ## Commands
 
