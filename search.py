@@ -14,13 +14,14 @@ def main(args):
     from data import DPRDataset, tensorize_questions, WikiPassageDataset
     from datetime import datetime
     from evaluate import has_answer, topk_retrieval_accuracy, print_performance
+    from faiss.contrib.exhaustive_search import knn
     from file_handling import write_json
     from model import load_model
     from pathlib import Path
     from torch.utils.data import DataLoader
     from transformers import AutoTokenizer
     from tqdm import tqdm
-    from util import strtime
+    from util import strtime, get_flat_index, get_faiss_metric
 
     transformers.logging.set_verbosity_error()
 
@@ -53,28 +54,44 @@ def main(args):
     question_matrix = np.concatenate(question_matrix, axis=0)
     num_questions, dim = question_matrix.shape
     print(f'Question matrix: {num_questions} x {dim}')
+    del model
+    del loader
 
-    # Passage embeddings
+    # Get an index. Note: faiss hardcodes 8 bits/vec for handling PQ indexes
+    faiss_metric = get_faiss_metric(args.metric)
     start_time_index = datetime.now()
     if args.index_method == 'Flat':
-        index = faiss.IndexFlatIP(dim)
-    elif args.index_method == 'IVFFlat':
-        # https://github.com/facebookresearch/faiss/blob/main/tutorial/python/2-IVFFlat.py
-        quantizer = faiss.IndexFlatIP(dim)
-        nlist = args.num_clusters
-        index = faiss.IndexIVFFlat(quantizer, dim, nlist,
-                                   faiss.METRIC_INNER_PRODUCT)
-
+        index = None if args.skip_index else get_flat_index(dim, args.metric)
+    elif args.index_method == 'IVF':
+        quantizer = get_flat_index(dim, args.metric_coarse)
+        index = faiss.IndexIVFFlat(quantizer, dim, args.num_clusters,
+                                   faiss_metric)
+        index.nprobe = args.num_probe
+    elif args.index_method == 'PQ':
+        index = faiss.IndexPQ(dim, args.num_subquantizers, args.num_bits,
+                              faiss_metric)
+    elif args.index_method == 'IVFPQ':
+        quantizer = get_flat_index(dim, args.metric_coarse)
+        index = faiss.IndexIVFPQ(quantizer, dim, args.num_clusters,
+                                 args.num_subquantizers, args.num_bits,
+                                 faiss_metric)  # faiss error if num_bits > 8
+        index.nprobe = args.num_probe
+    elif args.index_method == 'HNSW':
+        index = faiss.IndexHNSWFlat(dim, args.num_neighbors, faiss_metric)
+        index.hnsw.efConstruction = args.num_neighbors_over
+        index.hnsw.efSearch = args.num_neighbors_over_search
+        index.hnsw.search_bounded_queue = args.bounded_queue
     else:
         raise ValueError('Invalid index method: ' + args.index_method)
 
-    if str(device) == 'cuda' and args.use_faiss_gpu:
+    if str(device) == 'cuda' and args.use_faiss_gpu and not args.skip_index:
         # Faiss w/ GPUs seems much faster, but unfortunately it's not an option
         # for all but smallest indices since each GPU stores the entire index.
         ngpus = faiss.get_num_gpus()
         print(f'Using {ngpus} GPUs for faiss index')
         index = faiss.index_cpu_to_all_gpus(index)
 
+    # Passage embeddings
     passage_emb_files = sorted(glob.glob(args.passage_embs))
     print(f'Getting passage embeddings from: {str(passage_emb_files)}')
     i2pid = []
@@ -88,41 +105,69 @@ def main(args):
             passage_matrix = np.concatenate(
                 np.expand_dims([emb for _, emb in pairs], axis=0))
 
-            if args.index_method == 'Flat':
-                # Incrementally ad one matrix block: much more memory efficient
-                print(f'Adding {len(pairs)} vectors to the index')
-                index.add(passage_matrix)
-            elif args.index_method == 'IVFFlat':
-                # Need the entire matrix for clustering
+            if args.index_method != 'Flat' or args.skip_index:
                 giant_passage_matrix.append(passage_matrix)
+            else:
+                index.add(passage_matrix)  # In flat index, we add incrementally
 
-    if args.index_method == 'IVFFlat':
-        print('Preparing IVFFlat index')
+            del passage_matrix  # Try to reduce unnecessary memory usage
+
+    if args.index_method != 'Flat' or args.skip_index:
         print('\tConcatenating all passage matrices')
+        # np.concatenate is memory intensive: ~120G for 21m Wiki embs
         giant_passage_matrix = np.concatenate(giant_passage_matrix, axis=0)
         num_passages, dim = giant_passage_matrix.shape
         print(f'\tGiant passage matrix: {num_passages} x {dim}')
-        print(f'\tClustering into {args.num_clusters}')
-        start_time_cluster = datetime.now()
-        assert not index.is_trained
-        index.train(giant_passage_matrix)
-        assert index.is_trained
-        print(f'\tDone, clustering time {strtime(start_time_cluster)}')
+
+    # Unless we incrementally built a flat, we must now index the giant matrix
+    if args.index_method != 'Flat':
+
+        # Furthermore, except HNSW, we need training for quantization
+        if args.index_method != 'HNSW':
+
+            # faiss treats OPQ as a preprocessing step for PQ
+            if args.use_opq and args.index_method in ['PQ', 'IVFPQ']:
+                opq = faiss.OPQMatrix(dim, args.num_subquantizers)
+                opq.pq = faiss.ProductQuantizer(dim, args.num_subquantizers,
+                                                args.num_bits)
+                print('Training OPQ')
+                opq.train(giant_passage_matrix)
+                print('Training OPQ done, transforming')
+                giant_passage_matrix = opq.apply_py(giant_passage_matrix)
+
+                del opq
+
+            print('Training the index')
+            start_time_train = datetime.now()
+            assert not index.is_trained
+            index.train(giant_passage_matrix)
+            assert index.is_trained
+            print(f'\tDone, training time {strtime(start_time_train)}')
 
         print(f'\tAdding giant passage matrix to index')
         start_time_add = datetime.now()
-        index.add(giant_passage_matrix)
+        index.add(giant_passage_matrix)  # Bloats memory usage: up to 155G
         print(f'\tDone, adding time {strtime(start_time_add)}')
 
-
-    print(f'Total {index.ntotal} items in passage index, index time '
-          f'{strtime(start_time_index)}\n')
+    if not args.skip_index:
+        print(index)  # Print for sanity check
+        print(f'Total {index.ntotal} items in passage index, load+index time '
+              f'{strtime(start_time_index)}\n')
+        print('Trying to release memory for giant passage matrix')
+        del giant_passage_matrix  # Now we should have only the index in memory
 
     # Search
     print(f'Searching')
     start_time_search = datetime.now()
     t0 = time.time()
-    scores, ind_matrix = index.search(question_matrix, args.num_cands)
+    if args.index_method == 'Flat' and args.skip_index:
+        # Not much better than just building a flat index incrementally: both
+        # use 130-140G for building the index, and 87G for the index alone
+        print(f'Directly computing KNN without an index')
+        scores, ind_matrix = knn(question_matrix, giant_passage_matrix,
+                                 args.num_cands, faiss_metric)
+    else:  # Example ms/query: ~40 flat, ~0.4 hnsw
+        scores, ind_matrix = index.search(question_matrix, args.num_cands)
     t1 = time.time()
     mpq = (t1 - t0) * 1000.0 / num_questions
     print(f'Done, search time {strtime(start_time_search)}')
@@ -131,12 +176,9 @@ def main(args):
     topks = [[i2pid[ind] for ind in inds] for inds in ind_matrix]
     remapped = [(topks[row], scores[row]) for row in range(len(ind_matrix))]
 
-    print('Trying to release some memory')
-    del giant_passage_matrix
-    del passage_matrix
-    del index
-    del model
-    del loader
+    print('Trying to release memory for index and question matrix')
+    if not args.skip_index:
+        del index
     del question_matrix
 
     # Link pid to text
@@ -177,13 +219,38 @@ if __name__ == '__main__':
     parser.add_argument('outpath', type=str)
     parser.add_argument('passages_all', type=str)
     parser.add_argument('--index_method', type=str, default='Flat',
-                        choices=['Flat', 'IVFFlat', 'IVFPQ'])
-    parser.add_argument('--k_values', type=str, default='1,5,20,100')
-    parser.add_argument('--batch_size', type=int, default=128)
-    parser.add_argument('--num_cands', type=int, default=100)
-    parser.add_argument('--num_workers', type=int, default=0)
-    parser.add_argument('--num_clusters', type=int, default=100)
+                        choices=['Flat', 'IVF', 'PQ', 'IVFPQ', 'HNSW'],
+                        help='[%(default)s]')
+    parser.add_argument('--metric', type=str, default='IP',
+                        choices=['L2', 'IP'], help='[%(default)s]')
+    parser.add_argument('--metric_coarse', type=str, default='IP',
+                        choices=['L2', 'IP'], help='[%(default)s]')
+    parser.add_argument('--k_values', type=str, default='1,5,20,100',
+                        help='[%(default)s]')
+    parser.add_argument('--batch_size', type=int, default=128,
+                        help='[%(default)d]')
+    parser.add_argument('--num_cands', type=int, default=100,
+                        help='[%(default)d]')
+    parser.add_argument('--num_workers', type=int, default=0,
+                        help='[%(default)d]')
+    parser.add_argument('--num_clusters', type=int, default=1000,
+                        help='[%(default)d]')
+    parser.add_argument('--num_bits', type=int, default=8,
+                        help='[%(default)d]')
+    parser.add_argument('--num_subquantizers', type=int, default=16,
+                        help='[%(default)d]')
+    parser.add_argument('--num_probe', type=int, default=20,
+                        help='[%(default)d]')
+    parser.add_argument('--num_neighbors', type=int, default=32,
+                        help='[%(default)d]')
+    parser.add_argument('--num_neighbors_over', type=int, default=500,
+                        help='[%(default)d]')
+    parser.add_argument('--num_neighbors_over_search', type=int, default=256,
+                        help='[%(default)d]')
     parser.add_argument('--use_faiss_gpu', action='store_true')
+    parser.add_argument('--skip_index', action='store_true')
+    parser.add_argument('--bounded_queue', action='store_true')
+    parser.add_argument('--use_opq', action='store_true')
     parser.add_argument('--gpu', default='', type=str)
 
     args = parser.parse_args()

@@ -1,9 +1,28 @@
+import faiss
 import os
 import random
 import sys
 import unicodedata
 
 from datetime import datetime
+
+
+def get_flat_index(dim, metric):
+    if metric == 'IP':
+        return faiss.IndexFlatIP(dim)
+    elif metric == 'L2':
+        return faiss.IndexFlatL2(dim)
+    else:
+        raise ValueError('Invalid metric for Flat Index: ' + metric)
+
+
+def get_faiss_metric(metric):
+    if metric == 'IP':
+        return faiss.METRIC_INNER_PRODUCT
+    elif metric == 'L2':
+        return faiss.METRIC_L2
+    else:
+        raise ValueError('Invalid faiss metric: ' + metric)
 
 
 def check_distributed():
