@@ -57,7 +57,7 @@ def main(args):
     del model
     del loader
 
-    # Get an index. Note: faiss hardcodes 8 bits/vec for handling PQ indexes
+    # Get an index. Note: faiss hardcodes 8 bits/vec for many PQ indexes
     faiss_metric = get_faiss_metric(args.metric)
     start_time_index = datetime.now()
     if args.index_method == 'Flat':
@@ -67,14 +67,17 @@ def main(args):
         index = faiss.IndexIVFFlat(quantizer, dim, args.num_clusters,
                                    faiss_metric)
         index.nprobe = args.num_probe
-    elif args.index_method == 'PQ':
-        index = faiss.IndexPQ(dim, args.num_subquantizers, args.num_bits,
-                              faiss_metric)
-    elif args.index_method == 'IVFPQ':
-        quantizer = get_flat_index(dim, args.metric_coarse)
-        index = faiss.IndexIVFPQ(quantizer, dim, args.num_clusters,
-                                 args.num_subquantizers, args.num_bits,
-                                 faiss_metric)  # faiss error if num_bits > 8
+    elif args.index_method == 'PQ':  # OPQ bad unless composite index
+        factory_string = f'PQ{args.num_subquantizers}x{args.num_bits}'
+        if args.use_opq:
+            factory_string = f'OPQ{args.num_subquantizers},' + factory_string
+        index = faiss.index_factory(dim, factory_string, faiss_metric)
+    elif args.index_method == 'IVFPQ':  # OPQ bad unless composite index
+        factory_string = f'IVF{args.num_clusters},' + \
+                         f'PQ{args.num_subquantizers}x{args.num_bits}'
+        if args.use_opq:
+            factory_string = f'OPQ{args.num_subquantizers},' + factory_string
+        index = faiss.index_factory(dim, factory_string, faiss_metric)
         index.nprobe = args.num_probe
     elif args.index_method == 'HNSW':
         index = faiss.IndexHNSWFlat(dim, args.num_neighbors, faiss_metric)
@@ -124,19 +127,6 @@ def main(args):
 
         # Furthermore, except HNSW, we need training for quantization
         if args.index_method != 'HNSW':
-
-            # faiss treats OPQ as a preprocessing step for PQ
-            if args.use_opq and args.index_method in ['PQ', 'IVFPQ']:
-                opq = faiss.OPQMatrix(dim, args.num_subquantizers)
-                opq.pq = faiss.ProductQuantizer(dim, args.num_subquantizers,
-                                                args.num_bits)
-                print('Training OPQ')
-                opq.train(giant_passage_matrix)
-                print('Training OPQ done, transforming')
-                giant_passage_matrix = opq.apply_py(giant_passage_matrix)
-
-                del opq
-
             print('Training the index')
             start_time_train = datetime.now()
             assert not index.is_trained
