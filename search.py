@@ -21,7 +21,7 @@ def main(args):
     from torch.utils.data import DataLoader
     from transformers import AutoTokenizer
     from tqdm import tqdm
-    from util import strtime, get_flat_index, get_faiss_metric
+    from util import strtime, get_flat_index, get_faiss_metric, set_num_probe
 
     transformers.logging.set_verbosity_error()
 
@@ -66,7 +66,7 @@ def main(args):
         quantizer = get_flat_index(dim, args.metric_coarse)
         index = faiss.IndexIVFFlat(quantizer, dim, args.num_clusters,
                                    faiss_metric)
-        index.nprobe = args.num_probe
+        set_num_probe(index, args.num_probe)
     elif args.index_method == 'PQ':  # OPQ bad unless composite index
         factory_string = f'PQ{args.num_subquantizers}x{args.num_bits}'
         if args.use_opq:
@@ -78,7 +78,7 @@ def main(args):
         if args.use_opq:
             factory_string = f'OPQ{args.num_subquantizers},' + factory_string
         index = faiss.index_factory(dim, factory_string, faiss_metric)
-        index.nprobe = args.num_probe
+        set_num_probe(index, args.num_probe)
     elif args.index_method == 'HNSW':
         index = faiss.IndexHNSWFlat(dim, args.num_neighbors, faiss_metric)
         index.hnsw.efConstruction = args.num_neighbors_over

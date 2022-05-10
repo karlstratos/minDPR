@@ -7,6 +7,15 @@ import unicodedata
 from datetime import datetime
 
 
+# https://github.com/staoxiao/LibVQ/blob/master/LibVQ/base_index/FaissIndex.py
+def set_num_probe(index, num_probe):
+    if isinstance(index, faiss.IndexPreTransform):
+        ivf_index = faiss.downcast_index(index.index)
+        ivf_index.nprobe = num_probe
+    else:
+        index.nprobe = num_probe
+
+
 def get_flat_index(dim, metric):
     if metric == 'IP':
         return faiss.IndexFlatIP(dim)
